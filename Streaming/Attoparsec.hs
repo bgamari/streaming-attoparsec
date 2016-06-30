@@ -12,7 +12,9 @@ import qualified Data.ByteString.Streaming as B
 import qualified Data.ByteString as BS
 import qualified Data.Attoparsec.ByteString as A
 
-data Result m a = Fail (B.ByteString m a) [String] String
+data ParseError m a = ParseError (B.ByteString m a) [String] String
+
+data Result m a = Fail (ParseError m a)
                 | Done (B.ByteString m a)
 
 parse :: forall m a r. (Monad m)
@@ -27,23 +29,23 @@ parse parser = go (A.parse parser)
         case mr of
           Left ret ->
               case res mempty of
-                A.Fail rest ctxts err -> return $ Fail (B.chunk rest >> return ret) ctxts err
-                A.Partial _cont       -> return $ Fail (return ret) [] "Unexpected end of input"
+                A.Fail rest ctxts err -> return $ Fail $ ParseError (B.chunk rest >> return ret) ctxts err
+                A.Partial _cont       -> return $ Fail $ ParseError (return ret) [] "Unexpected end of input"
                 A.Done rest r         -> S.yield r >> return (Done $ B.chunk rest >> return ret)
 
           Right (b, bs') ->
               case res b of
-                A.Fail rest ctxts err -> return $ Fail (rest `B.consChunk` bs') ctxts err
+                A.Fail rest ctxts err -> return $ Fail $ ParseError (rest `B.consChunk` bs') ctxts err
                 A.Partial cont        -> go cont bs'
                 A.Done rest r         -> S.yield r >> return (Done $ rest `B.consChunk` bs')
 
 parseMany :: forall m a r. (Monad m)
           => A.Parser a
           -> B.ByteString m r
-          -> S.Stream (S.Of a) m (Either (B.ByteString m r, [String], String) r)
+          -> S.Stream (S.Of a) m (Either (ParseError m r) r)
 parseMany parser = go
   where
-    go :: B.ByteString m r -> S.Stream (S.Of a) m (Either (B.ByteString m r, [String], String) r)
+    go :: B.ByteString m r -> S.Stream (S.Of a) m (Either (ParseError m r) r)
     go bs = do
         empty <- lift $ B.null_ bs
         if empty
@@ -51,5 +53,5 @@ parseMany parser = go
           else do
             r <- parse parser bs
             case r of
-              Fail rest ctxts err -> return $ Left (rest, ctxts, err)
+              Fail err  -> return $ Left err
               Done rest -> go rest
