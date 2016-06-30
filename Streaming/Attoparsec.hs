@@ -3,6 +3,7 @@
 module Streaming.Attoparsec
     ( parseMany
     , parse
+    , ParseError(..)
     ) where
 
 import Control.Monad.Trans.Class
@@ -12,7 +13,10 @@ import qualified Data.ByteString.Streaming as B
 import qualified Data.ByteString as BS
 import qualified Data.Attoparsec.ByteString as A
 
-data ParseError m a = ParseError (B.ByteString m a) [String] String
+data ParseError m a = ParseError { peRemaining    :: B.ByteString m a
+                                 , peContexts     :: [String]
+                                 , peErrorMessage :: String
+                                 }
 
 data Result m a = Fail (ParseError m a)
                 | Done (B.ByteString m a)
